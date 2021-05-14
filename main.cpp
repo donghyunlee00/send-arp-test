@@ -152,9 +152,6 @@ int attack(pcap_t *handle, char *attacker_ip, uint8_t *attacker_mac, char *sende
         return -1;
     }
 
-    // printf("%s\n", sender_ip);
-    // printf("%.2x:%.2x:%.2x:%.2x:%.2x:%.2x\n", (unsigned char)sender_mac[0], (unsigned char)sender_mac[1], (unsigned char)sender_mac[2], (unsigned char)sender_mac[3], (unsigned char)sender_mac[4], (unsigned char)sender_mac[5]);
-
     if (arpInfection(handle, attacker_mac, sender_ip, sender_mac, target_ip) == -1)
     {
         printf("ERR: arpInfection()\n");
@@ -189,9 +186,6 @@ int main(int argc, char *argv[])
         pcap_close(handle);
         return -1;
     }
-
-    // printf("%s\n", attacker_ip);
-    // printf("%.2x:%.2x:%.2x:%.2x:%.2x:%.2x\n", (unsigned char)attacker_mac[0], (unsigned char)attacker_mac[1], (unsigned char)attacker_mac[2], (unsigned char)attacker_mac[3], (unsigned char)attacker_mac[4], (unsigned char)attacker_mac[5]);
 
     int num_victim = (argc - 2) / 2;
     for (int i = 1; i <= num_victim; i++)
