@@ -17,8 +17,8 @@ struct EthArpPacket
 
 void usage()
 {
-    printf("syntax : arp-spoof <interface> <sender ip 1> <target ip 1> [<sender ip 2> <target ip 2>...]\n");
-    printf("sample : arp-spoof wlan0 192.168.10.2 192.168.10.1 192.168.10.1 192.168.10.2\n");
+    printf("syntax : send-arp <interface> <sender ip> <target ip> [<sender ip 2> <target ip 2> ...]\n");
+    printf("sample : send-arp wlan0 192.168.10.2 192.168.10.1\n");
 }
 
 int getMyAddress(char *if_name, Ip *attacker_ip, Mac *attacker_mac)
